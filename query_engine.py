@@ -61,7 +61,6 @@ def ETL_XML(xml_file):
 def connect_to_mongodb():
     """Establishes a connection to MongoDB."""
     try:
-        # Adjust connection string as needed
         client = MongoClient("mongodb://localhost:27017/")
         # Test connection
         client.admin.command('ping')
@@ -301,7 +300,7 @@ def insert_conversation_to_postgresql(conn, table_name, data):
         cursor.executemany(insert_query, values_list)
         conn.commit()
         cursor.close()
-        print(f"Successfully inserted {len(data)} records into PostgreSQL")
+        print(f"Successfully inserted {len(data)} records")
         
     except psycopg2.Error as e:
         print(f"Error inserting data: {e}")
@@ -335,7 +334,7 @@ def insert_data_to_postgresql(conn, table_name, data):
         cursor.executemany(insert_query, values_list)
         conn.commit()
         cursor.close()
-        print(f"Successfully inserted {len(data)} records into PostgreSQL")
+        print(f"Successfully inserted {len(data)} records")
         
     except psycopg2.Error as e:
         print(f"Error inserting data: {e}")
@@ -432,64 +431,3 @@ def search(query: str):
     migrate_mongodb_to_postgresql("Logs", "unstructured_logs", "unstructured_logs")
 
     return search_postgresql(postgre_client, _query)
-
-if __name__ == "__main__":
-    # while True:
-        message = input("> ")
-        messages.append({"role": "user", "content": message})
-
-
-        # llm.format = Query.model_json_schema()
-        # response = llm.invoke(messages)
-
-        response = gemini_response(llm, messages, "gemini-2.5-flash", Query)
-
-        response = Query.model_validate_json(response)
-
-        query = response.Query
-        print("\n\nResponse: ", query)
-
-        insert_conversation_to_postgresql(postgre_client, "conversations", [{"id": conversation_id, "user_query": message, "assistant_response": query}])
-
-        migrate_mongodb_to_postgresql("Logs", "unstructured_logs", "unstructured_logs")
-
-        print(search_postgresql(postgre_client, query))
-
-        # query = ast.literal_eval(query)
-
-        # switch_to_knn(query, model)
-        # query["_source"] = {"excludes": ["Action_vector"]}
-        # query["min_score"] = 0.9
-
-        # mongo_client = connect_to_mongodb()
-
-        # if mongo_client:
-        #         # Fetch data from PostgreSQL
-        #     # with open("ad_simulated_events.xml", "r") as file:
-        #     #     data = file.read()
-        #     #     xml_file = ETL_XML(data)
-        #     #     insert_into_mongodb(mongo_client, "Logs", "unstructured_logs", xml_file)
-
-        #     mongodb_data = fetch_data_from_mongodb(mongo_client, "Logs", "unstructured_logs")
-        #     mongo_client.close()
-
-        #     if mongodb_data:
-        #         # Elasticsearch connection details
-        #         es = connect_to_elasticsearch()
-        #         if es:
-        #             index_name = "unstructured_logs_index"
-                    
-        #             create_index(es, index_name)
-                    
-        #             # Index the data
-        #             index_data_to_elasticsearch(es, model, index_name, mongodb_data)
-        #             time.sleep(1)
-
-        #             search_results = []
-        #             while True:
-        #                 search_results = search_documents(es, model, index_name, query)
-        #                 if (search_results == []):
-        #                     query["min_score"] = query["min_score"] - 0.05
-        #                 else:
-        #                     query["min_score"] = 0.9
-        #                     break

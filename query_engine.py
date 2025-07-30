@@ -85,6 +85,7 @@ def search(query: str):
     _query = response.Query
     print("\n\nResponse: ", _query)
     
+    
 
     insert_conversation_to_postgresql(postgre_client, "conversations", [{"id": conversation_id, "user_query": query, "assistant_response": _query}])
 

@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+import datetime
 
 def ETL_XML(xml_file):
     events = BeautifulSoup(xml_file, "xml")

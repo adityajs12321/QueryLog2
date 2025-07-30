@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 import os
 from google import genai
 from Utils.ETL import ETL_XML
-from Utils.postgre import connect_to_postgresql, create_conversations_table, fetch_conversation_from_postgres, insert_conversation_to_postgresql, search_postgresql, migrate_mongodb_to_postgresql
+from Utils.postgre import connect_to_postgresql, create_conversations_table, fetch_conversation_from_postgres, insert_conversation_to_postgresql, search_postgresql, convert_mongodb_to_postgresql_data, store_data_to_postgresql
 
 def gemini_response(client: genai.Client, messages: list, model: str, format=None) -> str:
     chat_history = []
@@ -65,7 +65,7 @@ def set_conversation_id(new_conversation_id):
     global conversation_id, messages
     conversation_id = new_conversation_id
 
-    create_conversations_table(postgre_client, "conversations", {"id": new_conversation_id, "user_query": "str", "assistant_response": "str"})
+    create_conversations_table(postgre_client, "conversations", {"id": "str", "user_query": "str", "assistant_response": "str"})
     messages_data = fetch_conversation_from_postgres(postgre_client, "conversations", conversation_id)
     if messages_data:
         for message in messages_data:
@@ -85,10 +85,12 @@ def search(query: str):
     _query = response.Query
     print("\n\nResponse: ", _query)
     
-    
+    with open("ad_simulated_events.xml", "r") as file:
+        data = ETL_XML(file)
+        converted_data = convert_mongodb_to_postgresql_data(data)
 
-    insert_conversation_to_postgresql(postgre_client, "conversations", [{"id": conversation_id, "user_query": query, "assistant_response": _query}])
+        insert_conversation_to_postgresql(postgre_client, "conversations", [{"id": conversation_id, "user_query": query, "assistant_response": _query}])
 
-    migrate_mongodb_to_postgresql("Logs", "unstructured_logs", "unstructured_logs")
+        store_data_to_postgresql(postgre_client, "unstructured_logs", converted_data)
 
     return search_postgresql(postgre_client, _query)

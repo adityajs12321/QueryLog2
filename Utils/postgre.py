@@ -243,13 +243,49 @@ def insert_data_to_postgresql(conn, table_name, data):
         print(f"Error inserting data: {e}")
         conn.rollback()
 
+def store_data_to_postgresql(conn, table_name, data):
+    """Inserts data into PostgreSQL table."""
+    if not conn or not data:
+        return
+    
+    try:
+        delete_postgresql_table(conn, table_name)
+        create_postgresql_table(conn, table_name, data[0])
+        cursor = conn.cursor()
+        
+        # Get column names from first document
+        columns = list(data[0].keys())
+        placeholders = ', '.join(['%s'] * len(columns))
+        
+        insert_query = f"""
+        INSERT INTO {table_name}
+        VALUES ({placeholders}, to_tsvector('english', %s))
+        """
+        
+        # Prepare data for insertion
+        values_list = []
+        for doc in data:
+            values = [doc.get(col) for col in columns]
+            values.append(values[-1])
+            values_list.append(values)
+        
+        # Execute batch insert
+        cursor.executemany(insert_query, values_list)
+        conn.commit()
+        cursor.close()
+        print(f"Successfully inserted {len(data)} records")
+        
+    except psycopg2.Error as e:
+        print(f"Error inserting data: {e}")
+        conn.rollback()
+
 def fetch_conversation_from_postgres(conn, table_name, conversation_id):
     """Fetches data from a specified table in PostgreSQL."""
     if not conn:
         return []
     try:
         cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM {table_name} WHERE id = {conversation_id}")
+        cursor.execute(f"SELECT * FROM {table_name} WHERE id = '{conversation_id}'")
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
         cursor.close()

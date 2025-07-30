@@ -249,8 +249,6 @@ def store_data_to_postgresql(conn, table_name, data):
         return
     
     try:
-        delete_postgresql_table(conn, table_name)
-        create_postgresql_table(conn, table_name, data[0])
         cursor = conn.cursor()
         
         # Get column names from first document

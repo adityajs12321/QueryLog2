@@ -34,7 +34,7 @@ def convert_mongodb_to_postgresql_data(documents):
                 doc[key] = value.isoformat()
         
         converted_data.append({k: v for k,v in doc.items() if k != "_id"})
-    print("converted_data", converted_data[0])
+    # print("converted_data", converted_data[0])
     return converted_data
 
 def migrate_mongodb_to_postgresql(mongo_db_name, mongo_collection_name, postgres_table_name):
@@ -138,6 +138,8 @@ def create_postgresql_table(conn, table_name, sample_document):
                 columns.append(f"{key} DATE")
             else:
                 columns.append(f"{key} TEXT")
+
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
         
         create_query = f"""
         CREATE TABLE IF NOT EXISTS {table_name} (

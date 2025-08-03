@@ -1,3 +1,5 @@
 /Tests/
 /query_log/
 /__pycache__/
+gv.json
+.env

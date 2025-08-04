@@ -8,6 +8,7 @@ from langgraph.graph.message import add_messages
 from Utils.postgre import connect_to_postgresql, create_conversations_table, fetch_conversation_from_postgres, insert_data_to_postgresql, insert_conversation_to_postgresql, search_postgresql, convert_mongodb_to_postgresql_data, delete_postgresql_table, create_postgresql_table
 from langchain.chat_models import init_chat_model
 from typing_extensions import TypedDict, Annotated
+from langfuse.langchain import CallbackHandler
 
 class MessageType(BaseModel):  
     message_type: int = Field(..., description="0 if the user's query is unrelated to the database, 1 if it is related")
@@ -15,16 +16,16 @@ class MessageType(BaseModel):
 class Query(BaseModel):
     Query: str = Field(..., description="The query")
 
-# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "gv.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "gv.json"
 
-# llm = init_chat_model(
-#     "gemini-2.5-flash",
-#     model_provider="google-vertexai",
-#     location="us-central1"
-# )
+llm = init_chat_model(
+    "gemini-2.5-flash",
+    model_provider="google-vertexai",
+    location="us-central1"
+)
 
-load_dotenv()
-llm = init_chat_model("google_genai:gemini-2.5-flash")
+# load_dotenv()
+# llm = init_chat_model("google_genai:gemini-2.5-flash")
 
 #UNSTRUCTURED LOGS SYSTEM PROMPT
 SQL_SYSTEM_PROMPT = """
@@ -47,7 +48,6 @@ Response: "SELECT TimeCreated FROM unstructured_logs WHERE SubjectUserName = 'na
 Don' forget to add "query" to the start of the query and use *score* for similarity search.
 
 Additional constraints:
-- If the user's query is not related to the database, say that you are an SQL agent and explain your purpose.
 - FOCUS ON THE LAST MESSAGE
 """
 
@@ -113,6 +113,8 @@ def generic_agent(state: State) -> str:
 
     return {"messages": [{"role": "assistant", "content": response.content}]}
 
+langfuse_handler = CallbackHandler()
+
 graph_builder.add_node("classifier", classify_intent)
 graph_builder.add_node("router", router)
 graph_builder.add_node("sql_agent", sql_agent)
@@ -163,7 +165,7 @@ def search(query: str):
     messages.append({"role": "user", "content": query})
     print("\n\nMessages History: ", messages)
 
-    response = graph.invoke({"messages": messages})
+    response = graph.invoke({"messages": messages}, config={"callbacks": [langfuse_handler]})
 
     _query = response["messages"][-1].content
     print("\n\nResponse: ", _query)
@@ -186,7 +188,7 @@ def search(query: str):
         temp_query = _query.replace(keyword, str(min_score))
         while True:
             results = search_postgresql(postgre_client, temp_query)
-            if results:
+            if results or results == [(0,)]:
                 min_score = 0.6
                 return results
             else:

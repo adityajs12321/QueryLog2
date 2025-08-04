@@ -11,7 +11,7 @@ def connect_to_postgresql():
             dbname="adityajs",
             user="adityajs",
             password=os.environ["POSTGRE_PASS"],
-            port="5432"
+            port="6000"
         )
         return conn
     except psycopg2.OperationalError as e:

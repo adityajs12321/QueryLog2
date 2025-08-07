@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-import query_engine_v2
+import query_engine_v3
 import uuid
 
 app = FastAPI()
@@ -19,9 +19,9 @@ def search(query: str, conversation_id: str = id):
 
     if (prev_id != _conversation_id): 
         prev_id = _conversation_id
-        query_engine_v2.set_conversation_id(_conversation_id)
+        query_engine_v3.set_conversation_id(_conversation_id)
     
     return {
-        "Response": query_engine_v2.search(query),
+        "Response": query_engine_v3.search(query),
         "Conversation ID": _conversation_id
     }

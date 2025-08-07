@@ -9,6 +9,8 @@ from Utils.postgre import connect_to_postgresql, create_conversations_table, fet
 from langchain.chat_models import init_chat_model
 from typing_extensions import TypedDict, Annotated
 from langfuse.langchain import CallbackHandler
+import autogen
+from autogen import AssistantAgent, UserProxyAgent
 
 class MessageType(BaseModel):  
     message_type: int = Field(..., description="0 if the user's query is unrelated to the database, 1 if it is related")
@@ -24,8 +26,8 @@ class Query(BaseModel):
 #     location="us-central1"
 # )
 
-load_dotenv()
-llm = init_chat_model("google_genai:gemini-2.5-flash")
+# load_dotenv()
+# llm = init_chat_model("google_genai:gemini-2.5-flash")
 
 #UNSTRUCTURED LOGS SYSTEM PROMPT
 SQL_SYSTEM_PROMPT = """
@@ -56,84 +58,28 @@ You are a helpful assistant that handles generic user requests that are not rela
 If the user asks for something that is unrelated to SQL queries or databases, you should say ONLY describe your purpose and not generate any SQL queries.
 """
 
-class State(TypedDict):
-    messages: Annotated[list[dict], add_messages]
-    message_type: str | None
-
-graph_builder = StateGraph(State)
-
-def classify_intent(state: State) -> str:
-    last_message = state["messages"][-1]
-    model = llm.with_structured_output(MessageType)
-
-    messages = [
-        {"role": "system", "content": """You are a helpful assistant that classifies the intent of the user's request as database related (SQLQuery) or unrelated (generic requests). Example of database requests: 'Which users were kicked out of the group', 'Were any accounts created', 'What time did jefferson join the meeting', etc..."""},
-        {"role": "user", "content": last_message.content}
-    ]
-
-    message_type = model.invoke(messages)
-
-    return {"message_type": message_type.message_type}
-
-def router(state: State) -> str:
-    if state["message_type"] == 0:
-        return {"next": "generic_agent"}
-    else:
-        return {"next": "sql_agent"}
-    
-def sql_agent(state: State) -> str:
-    if (len(state["messages"]) > 6):
-        last_message = state["messages"][-5:]
-    else:
-        last_message = state["messages"]
-    
-    model = llm.with_structured_output(Query)
-
-    messages = [
-        {"role": "system", "content": SQL_SYSTEM_PROMPT},
-    ]
-    messages.extend(last_message)
-
-    response = model.invoke(messages)
-
-    return {"messages": [{"role": "assistant", "content": response.Query}]}
-
-def generic_agent(state: State) -> str:
-    if (len(state["messages"]) > 6):
-        last_message = state["messages"][-5:]
-    else:
-        last_message = state["messages"]
-
-    messages = [
-        {"role": "system", "content": GENERIC_SYSTEM_PROMPT},
-    ]
-    messages.extend(last_message)
-
-    response = llm.invoke(messages)
-
-    return {"messages": [{"role": "assistant", "content": response.content}]}
-
-langfuse_handler = CallbackHandler()
-
-graph_builder.add_node("classifier", classify_intent)
-graph_builder.add_node("router", router)
-graph_builder.add_node("sql_agent", sql_agent)
-graph_builder.add_node("generic_agent", generic_agent)
-
-graph_builder.add_edge(START, "classifier")
-graph_builder.add_edge("classifier", "router")
-graph_builder.add_conditional_edges(
-    "router",
-    lambda state: state["next"],
-    {
-        "sql_agent": "sql_agent",
-        "generic_agent": "generic_agent"
-    }
+config_list_gemini = autogen.config_list_from_json(
+    "OAI_CONFIG_LIST2",
+    filter_dict={
+        "model": ["gemini-2.5-flash"],
+    },
 )
-graph_builder.add_edge("sql_agent", END)
-graph_builder.add_edge("generic_agent", END)
 
-graph = graph_builder.compile()
+seed = 42
+
+router_agent = autogen.AssistantAgent(
+        name="router_agent",
+        system_message="""You are a helpful assistant that classifies the intent of the user's request as database related (SQLQuery) or unrelated (generic requests). Example of database requests: 'Which users were kicked out of the group', 'Were any accounts created', 'What time did jefferson join the meeting', etc...""",
+        llm_config={"config_list": config_list_gemini, "seed": seed},
+        max_consecutive_auto_reply=1
+)
+
+user_proxy = UserProxyAgent(
+    name="user_proxy",
+    human_input_mode="NEVER",
+    max_consecutive_auto_reply=0,
+    code_execution_config=False,
+)
 
 conversation_id = 0
 postgre_client = connect_to_postgresql()
@@ -165,16 +111,39 @@ def search(query: str):
     messages.append({"role": "user", "content": query})
     print("\n\nMessages History: ", messages)
 
-    response = graph.invoke({"messages": messages}, config={"callbacks": [langfuse_handler]})
+    user_proxy.initiate_chat(
+        router_agent,
+        message=f"""
+        Route this message: {query}""",
+        clear_history=False
+    )
 
-    _query = response["messages"][-1].content
-    print("\n\nResponse: ", _query)
+    chat_history = user_proxy.chat_messages[router_agent]
+    _query = MessageType.model_validate_json(chat_history[-1]["content"].strip())
+    print("\n\nMessage Type: ", _query.message_type)
 
     insert_conversation_to_postgresql(postgre_client, "conversations", [{"id": conversation_id, "user_query": query, "assistant_response": _query}])
 
-    print("message type", response["message_type"])
-    if (response["message_type"] == 0):
+    print("message type", _query.message_type)
+    if (_query.message_type == 0):
         return _query
+    
+    sql_agent = AssistantAgent(
+            name="sql_agent",
+            system_message=SQL_SYSTEM_PROMPT,
+            llm_config={"config_list": config_list_gemini, "seed": seed, "response_format": Query},
+            max_consecutive_auto_reply=1
+        )
+    
+    user_proxy.initiate_chat(
+        sql_agent,
+        message=_query,
+        clear_history=False
+    )
+
+    chat_history = user_proxy.chat_messages[sql_agent]
+    _query = chat_history[-1]["content"].strip()
+    print("\n\nMessage Type: ", _query)
 
     match = re.search(r'\*score\*', _query)
     keyword = match.group(0) if match else None

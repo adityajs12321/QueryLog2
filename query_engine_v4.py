@@ -4,19 +4,22 @@ import re
 from dotenv import load_dotenv
 from Utils.ETL import ETL_XML
 from Utils.postgre import connect_to_postgresql, insert_data_to_postgresql, insert_conversation_to_postgresql, search_postgresql, convert_mongodb_to_postgresql_data, delete_postgresql_table, create_postgresql_table
-# from langfuse.langchain import CallbackHandler
-from langfuse import Langfuse
+from langfuse import get_client
 import autogen
 from autogen import AssistantAgent, UserProxyAgent
 from autogen.agentchat.contrib.capabilities import transform_messages, transforms
 from fastmcp import Client
-import openlit
+from openinference.instrumentation.crewai import CrewAIInstrumentor
+from openinference.instrumentation.litellm import LiteLLMInstrumentor
 
 class MessageType(BaseModel):  
     message_type: int = Field(..., description="0 if the user's query is unrelated to the database, 1 if it is related")
 
 class Query(BaseModel):
     Query: str = Field(..., description="The query")
+
+CrewAIInstrumentor().instrument(skip_dep_check=True)
+LiteLLMInstrumentor().instrument()
 
 # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "gv.json"
 

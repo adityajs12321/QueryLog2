@@ -11,7 +11,7 @@ def read_root():
     return "Logfile Assistant"
 
 @app.post("/query")
-def search(query: str, conversation_id: str = id):
+async def search(query: str, conversation_id: str = id):
     global id, prev_id
 
     id = str(uuid.uuid4()) if conversation_id is None else conversation_id
@@ -19,7 +19,7 @@ def search(query: str, conversation_id: str = id):
 
     if (prev_id != _conversation_id): 
         prev_id = _conversation_id
-        query_engine_v3.set_conversation_id(_conversation_id)
+        await query_engine_v3.set_conversation_id(_conversation_id)
     
     return {
         "Response": query_engine_v3.search(query),

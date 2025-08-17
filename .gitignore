@@ -1,5 +1,6 @@
 /Tests/
 /query_log/
+/query_log_crewai/
 /__pycache__/
 gv.json
 .env

@@ -1,0 +1,201 @@
+import datetime
+from typing import AsyncGenerator, override
+from zoneinfo import ZoneInfo
+from google.adk.agents import Agent, BaseAgent
+from dotenv import load_dotenv
+import io
+import math
+from contextlib import redirect_stdout
+import re, os
+import base64
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.events.event import Event
+from langfuse import get_client
+
+load_dotenv()
+
+from google.genai import types # For creating message Content/Parts
+from google.adk.sessions import InMemorySessionService
+from google.adk.runners import Runner
+import asyncio
+
+LANGFUSE_AUTH = base64.b64encode(
+    f"{os.environ.get('LANGFUSE_PUBLIC_KEY')}:{os.environ.get('LANGFUSE_SECRET_KEY')}".encode()
+).decode()
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = os.environ.get("LANGFUSE_HOST") + "/api/public/otel"
+os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {LANGFUSE_AUTH}"
+
+session_service = InMemorySessionService()
+
+APP_NAME = "weather_app"
+USER_ID = "adijs"
+SESSION_ID = "session_001"
+
+langfuse = get_client()
+
+class GameCreator(BaseAgent):
+    """
+    A custom agent that generates Python code for games using the Pygame library.
+    """
+
+    coder_agent: Agent
+    assets_agent: Agent
+
+    def __init__(
+        self,
+        name: str,
+        coder_agent: Agent,
+        assets_agent: Agent,
+    ):
+        self.coder_agent = coder_agent
+        self.assets_agent = assets_agent
+
+        super().__init__(
+            name=name,
+            coder_agent=coder_agent,
+            assets_agent=assets_agent
+        )
+    
+    @override
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+        return super()._run_async_impl(ctx)
+
+async def create_session():
+    session = await session_service.create_session(
+        app_name=APP_NAME,
+        user_id=USER_ID,
+        session_id=SESSION_ID,
+    )
+    return session
+
+async def call_agent_async(query: str, runner: Runner, user_id, session_id):
+  """Sends a query to the agent and prints the final response."""
+  print(f"\n>>> User Query: {query}")
+
+  content = types.Content(role='user', parts=[types.Part(text=query)])
+
+  final_response_text = "Agent did not produce a final response."
+
+  async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
+      if event.is_final_response():
+          if event.content and event.content.parts:
+            final_response_text = event.content.parts[0].text
+          elif event.actions and event.actions.escalate:
+             final_response_text = f"Agent escalated: {event.error_message or 'No specific message.'}"
+          break
+
+  return final_response_text
+
+# Router agent (decides intent and calls the correct tool)
+# router_agent = Agent(
+#     name="router_agent",
+#     model="gemini-2.5-flash",
+#     description=(
+#         "Routes user requests to the appropriate capability: weather/time or Python execution."
+#     ),
+#     instruction=(
+#         "Decide user's intent first. If they ask about weather or current time in a city, call the corresponding weather/time tool.\n"
+#         "If they ask to compute, transform data, or run code, call the Python tool.\n"
+#         "Only call the tool that matches the user's intent. If unclear, ask a brief clarifying question."
+#     ),
+#     tools=[get_weather, get_current_time, run_python],
+# )
+
+coder_agent = Agent(
+    name="coder_agent",
+    model="gemini-2.5-flash",
+    description=(
+        "You are a helpful AI assistant that generates Python code to create games using the Pygame library. "
+    ),
+    instruction=(
+        "Generate a complete, executable Python script based on the user's game idea or request. "
+        "The script should be self-contained, use Pygame, and include all necessary code to run the game. "
+        "If the user does not specify game dimensions, use 640x480 as the default window size. "
+        "Do not include any code for installing packages. "
+        "Your entire response should be only the Python code, enclosed in ```python ... ```"
+        "Use premade images wherever possible."
+        "All image file paths must be loaded directly from assets/image_name, dont use os.path.join or similar methods."
+    ),
+    tools=[]  # No specific tool needed for this agent
+)
+
+assets_agent = Agent(
+    name="assets_agent",
+    model="gemini-2.5-flash",
+    description=(
+        "You are a helpful AI assistant that generates Python code to create images using the Pillow library."
+    ),
+    instruction=(
+        "Your task is to generate a complete, executable Python script based on the user's request"
+        "The generated code must be a complete Python script."
+        "It MUST use the `Pillow` (PIL) library."
+        "The script must save the final image to a file named 'generated_image.png'."
+        "Do NOT include any code for displaying the image (e.g., `image.show()`), only save it."
+        "Image save directory is 'assets/'"
+        "The image dimensions should be 512x512 pixels unless the user specifies otherwise."
+        "Do not write any code that performs file system operations other than saving the single image file (e.g., no reading files, deleting files, or listing directories)."
+        "Image background should be transparent."
+        "Do not include any code that makes network requests."
+        "The generated code must be self-contained and not require any external assets."
+        "Assume that `Pillow` is already installed."
+        "Your entire response should be only the Python code, enclosed in ```python ... ```."
+    ),
+    tools=[]  # No specific tool needed for this agent
+)
+
+async def main(query: str):
+    session = await create_session()
+
+    runner = Runner(
+        agent=coder_agent, # Use the router agent as the entrypoint
+        app_name=APP_NAME,   # Associates runs with our app
+        session_service=session_service # Uses our session manager
+    )
+
+    assets_runner = Runner(
+        agent=assets_agent, # Use the assets agent
+        app_name=APP_NAME,   # Associates runs with our app
+        session_service=session_service # Uses our session manager
+    )
+
+    # query = input("Enter your query: ")
+    # query = "can you make a chess game"
+    response = await call_agent_async(query, runner, USER_ID, SESSION_ID)
+    game_code = response.strip()
+    if game_code.startswith("```python"):
+        game_code = game_code[9:]
+    if game_code.endswith("```"):
+        game_code = game_code[:-3]
+    game_code = game_code.strip()
+    print("\n\nGame Code:\n",game_code)
+
+    image_paths1 = re.findall("'assets/(.+?)'", game_code)
+    image_paths2 = re.findall('"assets/(.+?)"', game_code)
+    image_paths = image_paths1 or image_paths2
+    image_paths = list(set(image_paths))  # Remove duplicates
+    print("\n\nImage Paths:\n", image_paths)
+    for image_path in image_paths:
+        print("Generating image for:", image_path)
+        query = f"Create an image with the following description: {image_path[0:-4]} flappy bird"
+        response = await call_agent_async(query, assets_runner, USER_ID, SESSION_ID)
+        code = response.strip()
+        if code.startswith("```python"):
+            code = code[9:]
+        if code.endswith("```"):
+            code = code[:-3]
+        code = code.strip()
+
+        exec(code.strip(), globals())
+        os.rename('assets/generated_image.png', f'assets/{image_path}')
+            
+    exec(game_code.strip(), globals())
+    
+    with open("generated_game.py", "w") as f:
+        f.write(game_code.strip())
+    # print(response)
+
+async def generate_game(query: str):
+    await main(query)
+
+if __name__ == "__main__":
+    asyncio.run(main(query="can you make retro snake game"))

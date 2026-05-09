@@ -1,6 +1,6 @@
 # QueryLog: AI-Powered Logfile Assistant
 
-QueryLog is an intelligent log analysis engine that allows users to query structured and unstructured system logs using Natural Language. Powered by **Google Gemini 2.5 Flash** and orchestrated using **LangGraph**, the application seamlessly translates human inquiries into executable **PostgreSQL** queries, executing them against parsed log tables (like Active Directory/Windows Event logs), and preserving conversational memory context over REST APIs.
+QueryLog is an intelligent log analysis engine that allows users to query structured and unstructured system logs using Generative AI. Powered by **Google Gemini** and orchestrated using **LangGraph**, the application translates natural enquiries into executable **PostgreSQL** queries, executing them against parsed unstructured log tables, and preserving conversational memory context over RESTful APIs.
 
 ## Key Features
 
@@ -20,7 +20,6 @@ QueryLog is an intelligent log analysis engine that allows users to query struct
   - `ETL.py`: Extracts and parses raw XML logs.
   - `postgre.py`: Handles PostgreSQL connection, table creation, insertion, and fetching chat history.
   - `mongo.py`: MongoDB interaction logic.
-- `Tests/` - Testing suites (incorporating `autogen`, `crewai`, profiling checks).
 
 ## Setup & Installation
 
@@ -65,11 +64,6 @@ curl -X POST "http://127.0.0.1:8000/query?conversation_id=1&query=Who%20was%20re
 ```
 
 The system will route the query, formulate a similarity-based Postgres SQL statement, attempt execution, and return log records. If no direct match is found, the engine implements a graceful score-reduction feedback loops (`min_score`) to return the closest contextual logs.
-
-## Logs Schema Example
-
-The engine is currently tuned to parse System/Active Directory events encompassing:
-`ProviderName, EventID, Version, Level, Task, Opcode, Keywords, TimeCreated, EventRecordID, Channel, Computer, SubjectUserName, TargetUserName, Action`
 
 ## Technologies Used
 * **FastAPI**: Backend Web Framework
